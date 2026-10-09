@@ -21,3 +21,12 @@ docker run -d --name trxbot --restart unless-stopped --env-file .env -v $(pwd)/d
 
 ## دستورات
 /signal /stats /news /list /add /remove /subscribe /unsubscribe
+
+## تست فقط با گیتهاب
+1. Settings → Secrets and variables → Actions: دو secret بسازید: `BOT_TOKEN` و `ADMIN_ID`
+2. تب Actions → «Run bot (Telegram test session)» → Run workflow
+3. تا پایان زمان انتخاب‌شده در تلگرام به ربات پیام بدهید (/signal, /stats)
+
+یا Codespaces: Code → Codespaces → Create، سپس در ترمینال:
+`cp .env.example .env` ، مقادیر را پر کنید و `python bot.py`
+(در Codespaces از EXCHANGE=kucoin استفاده کنید.)

@@ -1,0 +1,33 @@
+name: Run bot (Telegram test session)
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "ربات چند دقیقه روشن بماند؟"
+        default: "30"
+      exchange:
+        description: "صرافی (binance روی سرورهای آمریکا بلاک است؛ kucoin/okx پیشنهاد می‌شود)"
+        default: "kucoin"
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    concurrency:
+      group: telegram-bot
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Start bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          EXCHANGE: ${{ inputs.exchange }}
+        run: |
+          timeout ${{ inputs.minutes }}m python bot.py || [ $? -eq 124 ]
