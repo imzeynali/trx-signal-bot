@@ -1,0 +1,14 @@
+[Unit]
+Description=TRX Spot Signal Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=botuser
+WorkingDirectory=/opt/trx_signal_bot
+ExecStart=/opt/trx_signal_bot/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

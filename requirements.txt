@@ -1,0 +1,7 @@
+python-telegram-bot[job-queue]>=21.0
+ccxt>=4.3
+pandas>=2.0
+numpy>=1.26
+feedparser>=6.0
+vaderSentiment>=3.3
+python-dotenv>=1.0
