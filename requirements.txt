@@ -1,7 +1,9 @@
-python-telegram-bot[job-queue]>=21.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
 ccxt>=4.3
 pandas>=2.0
 numpy>=1.26
 feedparser>=6.0
+requests>=2.31
 vaderSentiment>=3.3
 python-dotenv>=1.0

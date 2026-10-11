@@ -1,0 +1,14 @@
+[Unit]
+Description=Spot Signal Web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=botuser
+WorkingDirectory=/opt/signal_web
+ExecStart=/opt/signal_web/venv/bin/uvicorn web.app:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

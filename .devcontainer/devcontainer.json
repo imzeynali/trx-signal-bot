@@ -1,5 +1,8 @@
 {
-  "name": "trx-signal-bot",
+  "name": "spot-signal-web",
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
-  "postCreateCommand": "pip install -r requirements.txt"
+  "postCreateCommand": "pip install -r requirements.txt",
+  "containerEnv": { "EXCHANGE": "kucoin" },
+  "forwardPorts": [8000],
+  "portsAttributes": { "8000": { "label": "Signal Web", "onAutoForward": "openBrowser" } }
 }
