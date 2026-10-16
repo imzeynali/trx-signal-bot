@@ -81,3 +81,16 @@ def fetch_ohlcv(symbol: str, timeframe: str = "1h", days: int = 30, ttl: int = 1
             _cache.pop(min(_cache, key=lambda k: _cache[k][0]))
         _cache[key] = (now, df)
     return df.copy()
+
+
+def fetch_recent(symbol: str, timeframe: str, since_ms: int, limit: int = 1000) -> list:
+    """کندل‌های اخیر (برای پایش معاملات شبیه‌سازی‌شده)"""
+    ex = get_exchange()
+    with _fetch_lock:
+        return ex.fetch_ohlcv(symbol, timeframe, since=int(since_ms), limit=limit)
+
+
+def last_price(symbol: str) -> float:
+    ex = get_exchange()
+    with _fetch_lock:
+        return float(ex.fetch_ticker(symbol)["last"])

@@ -1,5 +1,4 @@
-fastapi>=0.110
-uvicorn[standard]>=0.29
+python-telegram-bot[job-queue]>=21.0
 ccxt>=4.3
 pandas>=2.0
 numpy>=1.26

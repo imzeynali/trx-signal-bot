@@ -1,67 +1,48 @@
-from dataclasses import asdict
+from collections import Counter
 
 import numpy as np
 import pandas as pd
 
-from .strategy import WARMUP_DAYS, Params, add_indicators, compute_components, daily_trend
+from .config import ATR_MULT, FEE, TARGETS_R, TF, WARMUP_DAYS
+from .engine import Position, advance
+from .indicators import add_indicators
+from .strategies import STRATEGIES
 from .util import to_epoch
 
 
-def run_backtest(df: pd.DataFrame, p: Params) -> dict:
-    """df شامل دوره گرم‌شدن (WARMUP_DAYS) در ابتدای خود است؛ معامله فقط بعد از آن باز می‌شود."""
+def run_backtest(df: pd.DataFrame, key: str, tf: str) -> dict:
+    """df شامل WARMUP_DAYS روز اضافه در ابتدا است؛ معامله فقط بعد از آن باز می‌شود."""
+    cfg, strat = TF[tf], STRATEGIES[key]
     d = add_indicators(df)
-    d["score"] = compute_components(d).sum(axis=1)
-    d = d.dropna()
-    idx = d.index
+    entry, exit_ = strat.fn(d)
     start = df.index[0] + pd.Timedelta(days=WARMUP_DAYS)
-    active = np.asarray(idx >= start)
+    active = np.asarray(d.index >= start)
+    valid = d[["atr", "rsi", "bb_up", "vol_ma", "hh20", "ll10"]].notna().all(axis=1).to_numpy()
+    high, low, close, atr = (d[c].to_numpy() for c in ("high", "low", "close", "atr"))
+    t = to_epoch(d.index)
 
-    if p.daily_filter:
-        dc = df["close"].resample("1D").last().dropna()
-        trend = daily_trend(dc).shift(1).fillna(False)      # فقط روز بسته‌شده قبلی (بدون نگاه به آینده)
-        allow = trend.reindex(idx.floor("D")).fillna(False).to_numpy(dtype=bool)
-    else:
-        allow = np.ones(len(d), dtype=bool)
-
-    score, close, high, low, atr = (d[c].to_numpy() for c in ("score", "close", "high", "low", "atr"))
-    t = to_epoch(idx)
-    pos, trades = None, []
+    pos, pos_i, trades = None, 0, []
     for i in range(len(d)):
         if not active[i]:
             continue
         if pos:
-            ex_price = reason = None
-            if low[i] <= pos["sl"]:                         # محافظه‌کارانه: اول حد ضرر
-                ex_price, reason = pos["sl"], "SL"
-            elif high[i] >= pos["tp"]:
-                ex_price, reason = pos["tp"], "TP"
-            elif score[i] <= p.sell_threshold:
-                ex_price, reason = close[i], "SIGNAL"
-            elif i - pos["i"] >= p.max_hold:
-                ex_price, reason = close[i], "TIME"
-            if ex_price is not None:
-                ret = ex_price * (1 - p.fee) / (pos["entry"] * (1 + p.fee)) - 1
-                trades.append({"entry_time": int(t[pos["i"]]), "entry_price": float(pos["entry"]),
-                               "exit_time": int(t[i]), "exit_price": float(ex_price),
-                               "reason": reason, "ret": float(ret)})
+            advance(pos, high[i], low[i], close[i], FEE, bool(exit_[i]), i - pos_i >= cfg["max_hold"])
+            if pos.closed:
+                trades.append({"entry_time": int(t[pos_i]), "exit_time": int(t[i]), "ret": float(pos.realized),
+                               "reason": pos.reason, "tp_hits": int(sum(pos.hit))})
                 pos = None
-        elif score[i] >= p.buy_threshold and allow[i]:
-            risk = atr[i] * p.atr_mult
-            pos = {"i": i, "entry": close[i], "sl": close[i] - risk, "tp": close[i] + risk * p.tp_r}
+        elif entry[i] and valid[i]:
+            risk = atr[i] * ATR_MULT
+            pos_i = i
+            pos = Position(entry=close[i], sl=close[i] - risk, targets=[close[i] + risk * r for r in TARGETS_R])
 
     sel = df[df.index >= start]
     stats = summarize(trades, start, df.index[-1], float(sel["close"].iloc[0]), float(sel["close"].iloc[-1]))
     stats["open_trade"] = pos is not None
-
-    equity, eq = [[int(to_epoch(sel.index[[0]])[0]), 1.0]], 1.0
-    for tr in trades:
-        eq *= 1 + tr["ret"]
-        equity.append([tr["exit_time"], eq])
-
-    st = to_epoch(sel.index)
-    candles = np.column_stack([st, sel[["open", "high", "low", "close"]].to_numpy()])
-    return {"params": asdict(p), "stats": stats, "trades": trades, "equity": equity,
-            "candles": candles, "start": int(st[0]), "end": int(st[-1])}
+    stats["reasons"] = dict(Counter(x["reason"] for x in trades))
+    stats["tp1_rate"] = float(np.mean([x["tp_hits"] >= 1 for x in trades]) * 100) if trades else 0.0
+    return {"strategy": key, "tf": tf, "stats": stats, "start": int(to_epoch(sel.index[[0]])[0]),
+            "end": int(to_epoch(sel.index[[-1]])[0])}
 
 
 def summarize(trades: list, start, end, price_start: float, price_end: float) -> dict:
@@ -70,8 +51,7 @@ def summarize(trades: list, start, end, price_start: float, price_end: float) ->
     if not trades:
         return {**out, "empty": True}
 
-    ret = pd.Series([x["ret"] for x in trades],
-                    index=pd.to_datetime([x["exit_time"] for x in trades], unit="s"))
+    ret = pd.Series([x["ret"] for x in trades], index=pd.to_datetime([x["exit_time"] for x in trades], unit="s"))
     eq = (1 + ret).cumprod()
     total = float(eq.iloc[-1])
     months, years = days / 30.44, days / 365.0
@@ -88,11 +68,9 @@ def summarize(trades: list, start, end, price_start: float, price_end: float) ->
     def block(freq, n):
         g = periods(freq)
         return {"avg": (total ** (1 / n) - 1) * 100,            # میانگین هندسی سود هر دوره تقویمی
-                "avg_active": float(g.mean() * 100),             # میانگین فقط دوره‌های دارای معامله
                 "loss_rate": float((g < 0).mean() * 100),        # نرخ خطا: درصد دوره‌های زیان‌ده
                 "active": int(len(g))}
 
-    monthly = periods("M")
     return {
         **out,
         "win_rate": float((ret > 0).mean() * 100), "loss_rate": float((ret <= 0).mean() * 100),
@@ -103,5 +81,5 @@ def summarize(trades: list, start, end, price_start: float, price_end: float) ->
         "max_dd": float((eq / eq.cummax() - 1).min() * 100),
         "max_loss_streak": int(best),
         "daily": block("D", days), "monthly": block("M", months), "yearly": block("Y", years),
-        "monthly_returns": [{"period": str(k), "ret": float(v * 100)} for k, v in monthly.items()],
+        "monthly_returns": [{"period": str(k), "ret": float(v * 100)} for k, v in periods("M").items()],
     }

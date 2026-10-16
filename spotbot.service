@@ -1,0 +1,14 @@
+[Unit]
+Description=Telegram Spot Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=botuser
+WorkingDirectory=/opt/spot_bot
+ExecStart=/opt/spot_bot/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
